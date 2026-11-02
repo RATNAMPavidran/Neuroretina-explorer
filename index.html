@@ -65,4 +65,55 @@ function tick(){if(!code){tc.textContent="";ts.textContent="Créez une session, 
 function csv(){const t="Rang;Nom;Score;Erreurs;Temps(s)\n"+rows.map((r,i)=>[i+1,'"'+String(r.n).replace(/"/g,'""')+'"',r.sc,r.er,r.t==null?"":r.t].join(";")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+t],{type:"text/csv"}));a.download="resultats_"+code+".csv";a.click()}
 if(/prof/.test(location.search+location.hash))teacher();else draw()
 
-</script></body></html>
+</script>
+<!-- Firebase : initialisation et connexion anonyme -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+  import {
+    getAuth,
+    signInAnonymously
+  } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+  import {
+    getDatabase
+  } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBFq8__PECUnUnFv7R5PeduRM3LD7FY2zg",
+    authDomain: "neuroretina-explorer.firebaseapp.com",
+    databaseURL: "https://neuroretina-explorer-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "neuroretina-explorer",
+    storageBucket: "neuroretina-explorer.firebasestorage.app",
+    messagingSenderId: "174560947172",
+    appId: "1:174560947172:web:58604bc17f9dd47e9335f1",
+    measurementId: "G-M2ZMFG8MTC"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const database = getDatabase(app);
+
+  // Connexion anonyme du joueur
+  window.firebaseAppReady = signInAnonymously(auth)
+    .then((credential) => {
+      console.log("✅ Firebase connecté !");
+      console.log("UID du joueur :", credential.user.uid);
+
+      // Objets disponibles pour la prochaine étape
+      window.firebaseApp = app;
+      window.firebaseAuth = auth;
+      window.firebaseDatabase = database;
+      window.firebaseUser = credential.user;
+
+      return credential.user;
+    })
+    .catch((error) => {
+      console.error("❌ Erreur de connexion Firebase :", error.code, error.message);
+      throw error;
+    });
+</script>
+
+
+
+
+
+</body></html>
