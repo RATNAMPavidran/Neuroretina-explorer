@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Neuroretina explorer</title>
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Neuroretina explorer</title>
 <style>
 :root{--bg:#F3E7D3;--card:#FBF4E6;--ink:#1A1414;--wine:#6D0F1F;--mut:#6b5a54;--line:#d9c8aa;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1A1214;--card:#2a1c1f;--ink:#F3E7D3;--wine:#b04458;--mut:#b9a99a;--line:#4a3438;color-scheme:dark}}
@@ -50,70 +50,93 @@ function jn(){code=ic.value.trim().toUpperCase();nm=iname.value.trim().slice(0,3
   return api("s/"+code+"/p/"+pid,"PUT",{n:nm,sc:0,er:0,gi:0,d:0,t:null}).then(()=>{ph="wait";draw();pl()})}).catch(()=>{ierr.textContent="Connection error."})}
 function pl(){clearInterval(poll);poll=setInterval(()=>api("s/"+code+"/st").then(st=>{if(ph=="wait"&&st=="play"){ph="play";mode=1;sc=0;gi=0;er=0;tried=0;fb="";sel=-1;ord=sh(ord);t0=Date.now();draw()}}).catch(()=>{}),2000)}
 function push(){const d=gi>=8;if(d){tend=Math.round((Date.now()-t0)/1000);clearInterval(poll)}api("s/"+code+"/p/"+pid,"PATCH",{sc:sc,er:er,gi:gi,d:d?1:0,t:d?tend:null})}
-/* ----- Interface prof : ouvrir la page avec ?prof ----- */
-let rows=[];
-function teacher(){if(prompt("Code enseignant ?")!==PIN){document.body.innerHTML="<p style='padding:20px'>Accès refusé</p>";return}
- document.querySelector("main").innerHTML='<div class="card"><p class="q">👩‍🏫 Espace enseignant</p>'+(LIVE?'':'<p class="fb">⚠️ Mode démo (Firebase non configuré) : fonctionne seulement entre onglets du même navigateur.</p>')+'<button class="go" onclick="ns()">➕ Nouvelle session</button><p class="big" id="tc"></p><p class="fb" id="ts"></p><div class="row"><button class="btn" onclick="ss(\'play\')">▶ Lancer</button><button class="btn" onclick="ss(\'end\')">⏹ Terminer</button><button class="btn" onclick="csv()">⬇ CSV</button></div></div><div class="card" id="tb"></div>';
- code=localStorage.getItem("nrcode")||"";tick();setInterval(tick,2000)}
-function ns(){code=Math.random().toString(36).replace(/[^a-z]/g,"").slice(0,4).toUpperCase();localStorage.setItem("nrcode",code);api("s/"+code,"PUT",{st:"open",c:Date.now()}).then(tick)}
-function ss(st){if(code)api("s/"+code+"/st","PUT",st).then(tick)}
-function tick(){if(!code){tc.textContent="";ts.textContent="Créez une session, puis donnez le code aux étudiants.";return}
- api("s/"+code).then(s=>{tc.textContent="Code : "+code;if(!s){ts.textContent="Session introuvable.";return}
-  ts.textContent={open:"🟡 Salle d'attente — les étudiants rejoignent",play:"🟢 Jeu en cours",end:"🔴 Terminé"}[s.st]||"";
-  rows=Object.values(s.p||{}).sort((a,b)=>b.sc-a.sc||(b.d-a.d)||((a.t||9e9)-(b.t||9e9))||a.er-b.er);
-  tb.innerHTML='<b>'+rows.length+' étudiant(s)</b><table><tr><th>#</th><th>Nom</th><th>Score</th><th>Erreurs</th><th>Avancée</th><th>Temps</th></tr>'+rows.map((r,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(r.n)+'</td><td><b>'+r.sc+'/8</b></td><td>'+r.er+'</td><td class="'+(r.d?"ok":"")+'">'+(r.d?"✓ fini":r.gi+"/8")+'</td><td>'+(r.t!=null?r.t+" s":"–")+'</td></tr>').join("")+'</table>'}).catch(()=>{ts.textContent="Erreur de connexion"})}
-function csv(){const t="Rang;Nom;Score;Erreurs;Temps(s)\n"+rows.map((r,i)=>[i+1,'"'+String(r.n).replace(/"/g,'""')+'"',r.sc,r.er,r.t==null?"":r.t].join(";")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+t],{type:"text/csv"}));a.download="resultats_"+code+".csv";a.click()}
+/* ----- Interface professeur : ouvrir la page avec ?prof ----- */
+const CLASS_CODE="1234";
+let rows=[],teacherTimer=null;
+function teacher(){
+ if(prompt("Code enseignant ?")!==PIN){
+  document.body.innerHTML="<p style='padding:20px'>Accès refusé</p>";return;
+ }
+ document.querySelector("main").innerHTML=
+  '<section class="card" style="border-left-width:7px">'+
+   '<p class="q">👩‍🏫 Espace professeur</p>'+
+   '<p class="fb">Gérez la séance et suivez les résultats des élèves en direct.</p>'+
+   '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0">'+
+    '<div class="card"><small>CODE DE LA CLASSE</small><p class="big" id="tc">1234</p></div>'+
+    '<div class="card"><small>PARTICIPANTS</small><p class="big" id="count">0</p></div>'+
+    '<div class="card"><small>ONT TERMINÉ</small><p class="big" id="finished">0</p></div>'+
+   '</div>'+
+   '<p class="fb" id="ts">Préparez une nouvelle séance.</p>'+
+   '<div class="row"><button class="btn" onclick="ns()">↻ Nouvelle séance</button>'+
+   '<button class="btn" onclick="ss(\'play\')">▶ Démarrer</button></div>'+
+   '<div class="row"><button class="btn" onclick="ss(\'end\')">⏹ Terminer</button>'+
+   '<button class="btn" onclick="csv()">⬇ Exporter CSV</button></div>'+
+   '<p class="fb">Communiquez le code <b>1234</b> aux élèves. Une nouvelle séance réinitialise les résultats précédents.</p>'+
+  '</section>'+
+  '<section class="card"><p class="q">📊 Résultats de la classe</p>'+
+   '<div style="overflow-x:auto"><table id="teacherTable"><thead><tr>'+
+    '<th>#</th><th>Élève</th><th>Score</th><th>Erreurs</th><th>Progression</th><th>Temps</th><th>État</th>'+
+   '</tr></thead><tbody id="teacherRows"><tr><td colspan="7">Aucune séance active.</td></tr></tbody></table></div>'+
+   '<p class="fb" id="emptyHint">Les élèves apparaîtront ici dès qu’ils auront rejoint la classe.</p>'+
+  '</section>';
+ code=CLASS_CODE;
+ tick();
+ if(teacherTimer)clearInterval(teacherTimer);
+ teacherTimer=setInterval(tick,2000);
+}
+function ns(){
+ code=CLASS_CODE;
+ localStorage.setItem("nrcode",code);
+ // La clé reste toujours 1234 ; on remplace les données de la séance précédente.
+ api("s/"+code,"PUT",{st:"open",c:Date.now(),p:{}})
+  .then(()=>tick())
+  .catch(()=>{ts.textContent="Impossible de créer la séance. Vérifiez la connexion Firebase.";});
+}
+function ss(st){
+ code=CLASS_CODE;
+ api("s/"+code+"/st","PUT",st).then(()=>tick())
+  .catch(()=>{ts.textContent="Impossible de modifier l’état de la séance.";});
+}
+function tick(){
+ code=CLASS_CODE;
+ api("s/"+code).then(s=>{
+  tc.textContent=CLASS_CODE;
+  if(!s){
+   ts.textContent="Aucune séance créée. Cliquez sur « Nouvelle séance ».";
+   count.textContent="0";finished.textContent="0";
+   teacherRows.innerHTML='<tr><td colspan="7">Aucune séance active.</td></tr>';
+   return;
+  }
+  const status={open:"🟡 Salle d’attente — les élèves peuvent rejoindre",play:"🟢 Partie en cours",end:"🔴 Séance terminée"};
+  ts.textContent=status[s.st]||"État inconnu";
+  rows=Object.values(s.p||{}).sort((a,b)=>(Number(b.sc)||0)-(Number(a.sc)||0)||
+   (Number(b.d)||0)-(Number(a.d)||0)||
+   ((a.t==null?9e9:a.t)-(b.t==null?9e9:b.t))||
+   (Number(a.er)||0)-(Number(b.er)||0));
+  const done=rows.filter(r=>Number(r.d)===1).length;
+  count.textContent=rows.length;
+  finished.textContent=done;
+  teacherRows.innerHTML=rows.length?rows.map((r,i)=>{
+   const progress=Math.max(0,Math.min(8,Number(r.gi)||0));
+   const isDone=Number(r.d)===1;
+   return '<tr><td>'+(i+1)+'</td><td>'+esc(r.n||"Élève")+'</td>'+
+    '<td><b>'+(Number(r.sc)||0)+'/8</b></td><td>'+(Number(r.er)||0)+'</td>'+
+    '<td>'+progress+'/8</td><td>'+(r.t!=null?esc(r.t)+" s":"–")+'</td>'+
+    '<td class="'+(isDone?"ok":"")+'">'+(isDone?"✓ Terminé":(s.st==="play"?"En cours":"En attente"))+'</td></tr>';
+  }).join(""):'<tr><td colspan="7">Aucun élève pour le moment.</td></tr>';
+  emptyHint.textContent=rows.length?done+" élève(s) sur "+rows.length+" ont terminé.":"Les élèves apparaîtront ici dès qu’ils auront rejoint la classe.";
+ }).catch(()=>{ts.textContent="Erreur de connexion à Firebase.";});
+}
+function csv(){
+ const t="Rang;Nom;Score;Erreurs;Progression;Temps(s);Terminé\n"+
+  rows.map((r,i)=>[i+1,'"'+String(r.n||"").replace(/"/g,'""')+'"',
+   Number(r.sc)||0,Number(r.er)||0,(Number(r.gi)||0)+"/8",
+   r.t==null?"":r.t,Number(r.d)===1?"Oui":"Non"].join(";")).join("\n");
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(new Blob(["\ufeff"+t],{type:"text/csv;charset=utf-8"}));
+ a.download="resultats_classe_1234.csv";a.click();
+ URL.revokeObjectURL(a.href);
+}
 if(/prof/.test(location.search+location.hash))teacher();else draw()
 
-</script>
-<!-- Firebase : initialisation et connexion anonyme -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
-  import {
-    getAuth,
-    signInAnonymously
-  } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
-  import {
-    getDatabase
-  } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-database.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyBFq8__PECUnUnFv7R5PeduRM3LD7FY2zg",
-    authDomain: "neuroretina-explorer.firebaseapp.com",
-    databaseURL: "https://neuroretina-explorer-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "neuroretina-explorer",
-    storageBucket: "neuroretina-explorer.firebasestorage.app",
-    messagingSenderId: "174560947172",
-    appId: "1:174560947172:web:58604bc17f9dd47e9335f1",
-    measurementId: "G-M2ZMFG8MTC"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const database = getDatabase(app);
-
-  // Connexion anonyme du joueur
-  window.firebaseAppReady = signInAnonymously(auth)
-    .then((credential) => {
-      console.log("✅ Firebase connecté !");
-      console.log("UID du joueur :", credential.user.uid);
-
-      // Objets disponibles pour la prochaine étape
-      window.firebaseApp = app;
-      window.firebaseAuth = auth;
-      window.firebaseDatabase = database;
-      window.firebaseUser = credential.user;
-
-      return credential.user;
-    })
-    .catch((error) => {
-      console.error("❌ Erreur de connexion Firebase :", error.code, error.message);
-      throw error;
-    });
-</script>
-
-
-
-
-
-</body></html>
+</script></body></html>
